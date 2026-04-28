@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  publicId   String    @unique
+  username   String    @unique
+  email      String
+  name       String
+  dn         String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  files      File[]
+  folders    Folder[]
+  versions   Version[]
+  deletedFiles File[]  @relation("DeletedFiles")
+  memberships GroupMember[]
+}
+
+model Group {
+  id         Int       @id @default(autoincrement())
+  publicId   String    @unique
+  name       String    @unique
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  members    GroupMember[]
+  folders    Folder[]
+  files      File[]
+}
+
+model GroupMember {
+  id        Int      @id @default(autoincrement())
+  groupId   Int
+  userId    Int
+  role      String   @default("member")  // "admin" | "member"
+  createdAt DateTime @default(now())
+
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model Folder {
+  id         Int       @id @default(autoincrement())
+  publicId   String    @unique
+  userId     Int
+  groupId    Int
+  parentId   Int?
+  name       String
+  path       String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id])
+  group      Group     @relation(fields: [groupId], references: [id])
+  parent     Folder?   @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children   Folder[]  @relation("FolderHierarchy")
+  files      File[]
+
+  @@unique([groupId, path])
+}
+
+model File {
+  id               Int       @id @default(autoincrement())
+  publicId         String    @unique
+  userId           Int
+  groupId          Int
+  folderId         Int?
+  name             String
+  mimeType         String?
+  path             String
+  summary          String?
+  currentVersionId Int?      @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+  deletedBy        Int?
+  user             User      @relation(fields: [userId], references: [id])
+  group            Group     @relation(fields: [groupId], references: [id])
+  folder           Folder?   @relation(fields: [folderId], references: [id])
+  versions         Version[] @relation("FileVersions")
+  currentVersion   Version?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
+  creator          User?     @relation("DeletedFiles", fields: [deletedBy], references: [id])
+}
+
+model Version {
+  id            Int      @id @default(autoincrement())
+  publicId      String   @unique
+  fileId        Int
+  versionNumber Int
+  storagePath   String
+  originalName  String?
+  fileSize      BigInt
+  checksum      String
+  mimeType      String?
+  changeLog     String?
+  isCurrent     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  createdBy     Int
+  file          File     @relation("FileVersions", fields: [fileId], references: [id])
+  currentFile   File?    @relation("FileCurrentVersion")
+  user          User     @relation(fields: [createdBy], references: [id])
+
+  @@index([fileId])
+}
