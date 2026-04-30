@@ -251,6 +251,14 @@ export async function renameFolder(id: number, name: string): Promise<Folder> {
   return data.data;
 }
 
+export async function deleteFolder(id: number): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/folders/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to delete folder');
+}
+
 export async function moveFolder(id: number, targetParentPath: string): Promise<Folder> {
   const res = await fetch(`${API_URL}/api/v1/folders/${id}`, {
     method: 'PATCH',

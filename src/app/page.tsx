@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileRecord, getFiles, uploadFile, updateFile, deleteFile, downloadFile, rollback, Version, getFilesByFolder, Folder, renameFile, moveFile, copyFile, renameFolder, moveFolder, createFolder } from '@/lib/api';
+import { FileRecord, getFiles, uploadFile, updateFile, deleteFile, downloadFile, rollback, Version, getFilesByFolder, Folder, renameFile, moveFile, copyFile, renameFolder, moveFolder, createFolder, deleteFolder } from '@/lib/api';
 import { FileList } from '@/components/file-list';
 import { FileDetailModal } from '@/components/file-detail-modal';
 import { UploadModal } from '@/components/upload-modal';
@@ -278,14 +278,18 @@ export default function Home() {
     await loadFolders();
   };
 
-  const handleDeleteFromContextMenu = async (item: { type: 'file'; id: string } | { type: 'folder'; id: number }) => {
+  const handleDeleteFromContextMenu = async (item: { type: 'file'; id: string; name?: string; folderPath?: string | null } | { type: 'folder'; id: number; name: string; path: string }) => {
     if (item.type === 'file') {
       await handleDelete(item.id);
     } else {
-      if (!confirm(`确定要删除文件夹吗？`)) return;
-      // Soft delete: update folder's parentId to mark as deleted (or use API)
-      // For now, we just show a message since folder deletion isn't implemented yet
-      alert('文件夹删除功能待实现');
+      if (!confirm(`确定要删除文件夹「${item.name}」吗？文件夹中的文件将被软删除。`)) return;
+      await deleteFolder(item.id);
+      await loadFolders();
+      if (currentFolderPath && currentFolderPath.startsWith(item.path)) {
+        navigateToFolder(null);
+      } else {
+        await loadFiles();
+      }
     }
   };
 

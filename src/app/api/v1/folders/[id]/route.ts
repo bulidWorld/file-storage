@@ -1,7 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { store } from '@/lib/store';
+import { store, prisma } from '@/lib/store';
 import { logger } from '@/utils/server-logger';
+
+// DELETE /api/v1/folders/[id] - Delete folder and its children
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const authHeader = request.headers.get('authorization');
+    const user = getAuthUser(authHeader);
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const folder = await store.folders.findUnique({ id: Number(id) });
+    if (!folder) {
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
+    }
+
+    const defaultGroup = await store.groups.findOrCreateDefault();
+
+    // Get all folders in the hierarchy (folder + all descendants)
+    const allFolders = await store.folders.findMany({
+      groupId: defaultGroup.id,
+      parentId: undefined,
+      orderBy: { path: 'asc' },
+    });
+
+    const hierarchy = allFolders.filter(f =>
+      f.path === folder.path || f.path.startsWith(folder.path + '/')
+    );
+
+    // Sort by path depth descending (deepest first) for bottom-up deletion
+    hierarchy.sort((a, b) => {
+      const aDepth = a.path.split('/').filter(Boolean).length;
+      const bDepth = b.path.split('/').filter(Boolean).length;
+      return bDepth - aDepth;
+    });
+
+    // Soft-delete files and remove each folder (deepest first)
+    for (const f of hierarchy) {
+      const folderFiles = await prisma.file.findMany({
+        where: { folderId: f.id, groupId: defaultGroup.id },
+      });
+      const now = new Date();
+      for (const file of folderFiles) {
+        await prisma.file.update({
+          where: { id: file.id },
+          data: { deletedAt: now, deletedBy: user.id },
+        });
+      }
+      await prisma.folder.delete({ where: { id: f.id } });
+    }
+
+    return NextResponse.json({ message: 'Folder deleted successfully' });
+  } catch (error) {
+    logger.error('Folder delete error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
 
 // PATCH /api/v1/folders/[id] - Rename or move folder
 export async function PATCH(
