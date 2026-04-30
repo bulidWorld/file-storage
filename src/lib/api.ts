@@ -1,6 +1,6 @@
 // Use environment variable for API URL, fallback to empty string for same-host deployment
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/client-logger';
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token');

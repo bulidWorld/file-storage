@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { store } from '@/lib/store';
 import { readFileSync } from 'fs';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 // GET /api/v1/files/:id/download - Download file
 export async function GET(

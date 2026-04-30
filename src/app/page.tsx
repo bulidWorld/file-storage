@@ -8,7 +8,9 @@ import { FileDetailModal } from '@/components/file-detail-modal';
 import { UploadModal } from '@/components/upload-modal';
 import { ContextMenu } from '@/components/context-menu';
 import { FolderPickerModal } from '@/components/folder-picker-modal';
-import { logger } from '@/utils/logger';
+import { OnlyOfficeEditor } from '@/components/onlyoffice-editor';
+import { getDocType } from '@/lib/onlyoffice';
+import { logger } from '@/utils/client-logger';
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token');
@@ -30,7 +32,9 @@ import {
   LogOut,
   User as UserIcon,
   FileText,
-  FileSpreadsheet,
+  FileType,
+  Presentation,
+  FileChartLine,
   Image,
   Video,
   Music,
@@ -50,6 +54,8 @@ interface BreadcrumbItem {
 
 export default function Home() {
   const router = useRouter();
+  const initialFolder = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('folder') : null;
+  const initialEditId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('edit') : null;
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<FileRecord | null>(null);
@@ -58,9 +64,52 @@ export default function Home() {
   const [currentFilter, setCurrentFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [user, setUser] = useState<{ username: string; name: string; email: string } | null>(null);
-  const [currentFolderPath, setCurrentFolderPath] = useState<string | null>(null);
+  const [currentFolderPath, setCurrentFolderPath] = useState<string | null>(initialFolder);
   const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [onlyofficeFile, setOnlyofficeFile] = useState<{ publicId: string; fileName: string } | null>(null);
+
+  // Navigation: sync state with browser URL
+  const navigateToFolder = useCallback((path: string | null) => {
+    const url = path ? `?folder=${encodeURIComponent(path)}` : '/';
+    window.history.pushState({ path }, '', url);
+    setCurrentFolderPath(path);
+    setOnlyofficeFile(null);
+  }, []);
+
+  const openOnlyOffice = useCallback((publicId: string, fileName: string) => {
+    const folder = currentFolderPath;
+    const url = folder
+      ? `?folder=${encodeURIComponent(folder)}&edit=${encodeURIComponent(publicId)}`
+      : `?edit=${encodeURIComponent(publicId)}`;
+    window.history.pushState({ edit: publicId }, '', url);
+    setOnlyofficeFile({ publicId, fileName });
+  }, [currentFolderPath]);
+
+  const closeOnlyOffice = useCallback(() => {
+    setOnlyofficeFile(null);
+    const url = currentFolderPath ? `?folder=${encodeURIComponent(currentFolderPath)}` : '/';
+    window.history.replaceState(null, '', url);
+  }, [currentFolderPath]);
+
+  // Browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const folder = params.get('folder');
+      setCurrentFolderPath(folder);
+      const edit = params.get('edit');
+      if (edit) {
+        const targetFile = files.find(f => f.publicId === edit);
+        if (targetFile) setOnlyofficeFile({ publicId: edit, fileName: targetFile.name });
+        else setOnlyofficeFile(null);
+      } else {
+        setOnlyofficeFile(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [files]);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: { type: 'file'; id: string; name: string; folderPath?: string | null } | { type: 'folder'; id: number; name: string; path: string } } | null>(null);
@@ -108,12 +157,16 @@ export default function Home() {
         ? await getFilesByFolder(currentFolderPath)
         : await getFiles();
       setFiles(data);
+      if (!onlyofficeFile && initialEditId) {
+        const targetFile = data.find(f => f.publicId === initialEditId);
+        if (targetFile) setOnlyofficeFile({ publicId: initialEditId, fileName: targetFile.name });
+      }
     } catch (error) {
       logger.error('Failed to load files:', error);
     } finally {
       setLoading(false);
     }
-  }, [currentFolderPath]);
+  }, [currentFolderPath, onlyofficeFile, initialEditId]);
 
   // Check authentication on mount
   useEffect(() => {
@@ -173,7 +226,7 @@ export default function Home() {
     setShowUploadForm(false);
     await loadFiles();
     await loadFolders();
-    setCurrentFolderPath(folderPath || null);
+    navigateToFolder(folderPath || null);
   };
 
   const handleUpdate = async (fileId: string, newFile: globalThis.File, changeLog: string) => {
@@ -291,19 +344,24 @@ export default function Home() {
   const getFileIcon = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     const extMap: Record<string, { icon: React.ElementType; color: string }> = {
-      // Documents
-      pdf: { icon: FileText, color: 'text-red-500 bg-red-500/20' },
-      doc: { icon: FileText, color: 'text-blue-400 bg-blue-400/20' },
-      docx: { icon: FileText, color: 'text-blue-400 bg-blue-400/20' },
+      // Word documents
+      doc: { icon: FileType, color: 'text-blue-400 bg-blue-400/20' },
+      docx: { icon: FileType, color: 'text-blue-400 bg-blue-400/20' },
+      odt: { icon: FileType, color: 'text-blue-400 bg-blue-400/20' },
       txt: { icon: FileText, color: 'text-amber-300/70 bg-amber-300/10' },
-      md: { icon: FileText, color: 'text-amber-300/70 bg-amber-300/10' },
+      rtf: { icon: FileType, color: 'text-amber-300/70 bg-amber-300/10' },
       // Spreadsheets
-      xls: { icon: FileSpreadsheet, color: 'text-emerald-400 bg-emerald-400/20' },
-      xlsx: { icon: FileSpreadsheet, color: 'text-emerald-400 bg-emerald-400/20' },
-      csv: { icon: FileSpreadsheet, color: 'text-emerald-400 bg-emerald-400/20' },
+      xls: { icon: FileChartLine, color: 'text-emerald-400 bg-emerald-400/20' },
+      xlsx: { icon: FileChartLine, color: 'text-emerald-400 bg-emerald-400/20' },
+      ods: { icon: FileChartLine, color: 'text-emerald-400 bg-emerald-400/20' },
+      csv: { icon: FileChartLine, color: 'text-emerald-400 bg-emerald-400/20' },
       // Presentations
-      ppt: { icon: FileText, color: 'text-orange-400 bg-orange-400/20' },
-      pptx: { icon: FileText, color: 'text-orange-400 bg-orange-400/20' },
+      ppt: { icon: Presentation, color: 'text-orange-400 bg-orange-400/20' },
+      pptx: { icon: Presentation, color: 'text-orange-400 bg-orange-400/20' },
+      odp: { icon: Presentation, color: 'text-orange-400 bg-orange-400/20' },
+      // PDF and others
+      pdf: { icon: FileText, color: 'text-red-500 bg-red-500/20' },
+      md: { icon: FileText, color: 'text-amber-300/70 bg-amber-300/10' },
       // Images
       jpg: { icon: Image, color: 'text-purple-400 bg-purple-400/20' },
       jpeg: { icon: Image, color: 'text-purple-400 bg-purple-400/20' },
@@ -387,7 +445,7 @@ export default function Home() {
         <div key={node.id}>
           <div className="flex items-center">
             <button
-              onClick={() => setCurrentFolderPath(node.path)}
+              onClick={() => navigateToFolder(node.path)}
               className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-700 hover:bg-gray-100 truncate ${
                 currentFolderPath === node.path ? 'bg-blue-50 text-blue-600' : ''
               }`}
@@ -528,7 +586,7 @@ export default function Home() {
               <button
                 onClick={() => {
                   setCurrentFilter(crumb.filter);
-                  setCurrentFolderPath(crumb.folderPath || null);
+                  navigateToFolder(crumb.folderPath || null);
                 }}
                 className={`px-2 py-1 rounded hover:bg-gray-100 ${
                   (currentFolderPath === (crumb.folderPath || null)) ? 'bg-blue-100 text-blue-600 font-medium' : 'text-gray-600'
@@ -550,7 +608,7 @@ export default function Home() {
         <aside className="w-64 bg-white border-r border-gray-300 overflow-y-auto">
           <nav className="p-3 space-y-1">
             <button
-              onClick={() => { setCurrentFilter('all'); setCurrentFolderPath(null); }}
+              onClick={() => { setCurrentFilter('all'); navigateToFolder(null); }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm ${currentFilter === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
             >
               <HomeIcon className="w-4 h-4" />
@@ -659,7 +717,7 @@ export default function Home() {
                           <div
                             key={folder.id}
                             className="group flex flex-col items-center w-28 p-4 rounded-lg border border-blue-400 hover:border-blue-500 bg-transparent cursor-pointer transition-all"
-                            onClick={() => setCurrentFolderPath(folder.path)}
+                            onClick={() => navigateToFolder(folder.path)}
                             onContextMenu={(e) => handleContextMenuFolder(e, folder)}
                             title={folder.path}
                           >
@@ -682,11 +740,19 @@ export default function Home() {
                       .sort((a, b) => a.name.localeCompare(b.name))
                       .map(file => {
                         const { icon: FileIcon } = getFileIcon(file.name);
+                        const isOfficeFile = getDocType(file.name) !== null;
                         return (
                           <div
                             key={file.id}
                             className="group flex flex-col items-center w-28 p-4 rounded-lg border border-blue-400 hover:border-blue-500 bg-transparent cursor-pointer transition-all"
                             onClick={() => setSelectedFile(file)}
+                            onDoubleClick={() => {
+                              if (isOfficeFile) {
+                                openOnlyOffice(file.publicId, file.name);
+                              } else {
+                                setSelectedFile(file);
+                              }
+                            }}
                             onContextMenu={(e) => handleContextMenuFile(e, file)}
                             title={file.name}
                           >
@@ -746,6 +812,15 @@ export default function Home() {
         />
       )}
 
+      {/* OnlyOffice Editor */}
+      {onlyofficeFile && (
+        <OnlyOfficeEditor
+          publicId={onlyofficeFile.publicId}
+          fileName={onlyofficeFile.fileName}
+          onClose={() => closeOnlyOffice()}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -764,6 +839,9 @@ export default function Home() {
           onDelete={() => handleDeleteFromContextMenu(contextMenu.item)}
           onMove={() => setShowFolderPicker({ type: 'move', item: contextMenu.item })}
           onCopy={() => setShowFolderPicker({ type: 'copy', item: contextMenu.item })}
+          onEdit={contextMenu.item.type === 'file' && getDocType(contextMenu.item.name) ? () => {
+            openOnlyOffice(contextMenu.item.id, contextMenu.item.name);
+          } : undefined}
         />
       )}
 

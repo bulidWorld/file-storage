@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { store } from '@/lib/store';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 // GET /api/v1/folders - List folders
 export async function GET(request: NextRequest) {

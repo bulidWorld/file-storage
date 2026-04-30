@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, X, FolderPlus, ChevronRight } from 'lucide-react';
 import { getAllFolders, createFolder, Folder } from '../lib/api';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/client-logger';
 
 interface FileUploadProps {
   onUpload: (file: File, changeLog: string, folderPath?: string) => Promise<void>;

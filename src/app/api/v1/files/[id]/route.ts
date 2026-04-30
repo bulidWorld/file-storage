@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 function computeChecksum(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');

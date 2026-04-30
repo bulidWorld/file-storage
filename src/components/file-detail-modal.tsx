@@ -6,7 +6,7 @@ import { X, Upload, Star, Download, Trash2, Clock, File, HardDrive, Calendar, Ch
 import { FileUpload } from './file-upload';
 import { VersionHistory } from './version-history';
 import { formatCNDate } from '@/utils/format';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/client-logger';
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token');

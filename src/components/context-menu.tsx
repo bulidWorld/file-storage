@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { FileText, FolderOpen, Trash2, Copy, Move, Pencil } from 'lucide-react';
+import { FileText, FolderOpen, Trash2, Copy, Move, Pencil, Pen } from 'lucide-react';
 
 type ContextMenuItem =
   | { type: 'file'; id: string; name: string; folderPath?: string | null }
@@ -15,10 +15,11 @@ interface ContextMenuProps {
   onDelete: () => void;
   onMove: () => void;
   onCopy: () => void;
+  onEdit?: () => void;
   onClose: () => void;
 }
 
-export function ContextMenu({ x, y, item, onRename, onDelete, onMove, onCopy, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, item, onRename, onDelete, onMove, onCopy, onEdit, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,12 +43,17 @@ export function ContextMenu({ x, y, item, onRename, onDelete, onMove, onCopy, on
 
   const isFolder = item.type === 'folder';
 
-  const menuItems = [
-    ...(isFolder ? [{ label: '重命名', icon: Pencil, action: onRename }] : []),
-    { label: '删除', icon: Trash2, action: onDelete, danger: true },
-    { label: '移动', icon: Move, action: onMove },
-    { label: '复制', icon: Copy, action: onCopy },
-  ];
+  const menuItems: { label: string; icon: React.ElementType; action: () => void; danger?: boolean }[] = [];
+
+  if (isFolder) {
+    menuItems.push({ label: '重命名', icon: Pencil, action: onRename });
+  } else if (onEdit) {
+    menuItems.push({ label: '在线编辑', icon: Pen, action: onEdit });
+  }
+
+  menuItems.push({ label: '删除', icon: Trash2, action: onDelete, danger: true });
+  menuItems.push({ label: '移动', icon: Move, action: onMove });
+  menuItems.push({ label: '复制', icon: Copy, action: onCopy });
 
   return (
     <div

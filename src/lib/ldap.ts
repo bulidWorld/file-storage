@@ -1,5 +1,5 @@
 import ldap from 'ldapjs';
-import { logger as appLogger } from '@/utils/logger';
+import { logger as appLogger } from '@/utils/server-logger';
 
 export interface LdapUser {
   username: string;

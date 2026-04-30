@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateLdap } from '@/lib/ldap';
 import { signToken } from '@/lib/auth';
 import { store } from '@/lib/store';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 export async function POST(request: NextRequest) {
   try {

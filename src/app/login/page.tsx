@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Lock, User, AlertCircle, HardDrive, Eye, EyeOff } from 'lucide-react';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/client-logger';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { store, sanitize } from '@/lib/store';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 // PATCH /api/v1/files/[id] - Rename file
 export async function PATCH(

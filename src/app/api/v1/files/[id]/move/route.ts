@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { store, sanitize } from '@/lib/store';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 // POST /api/v1/files/[id]/move - Move file to folder
 export async function POST(

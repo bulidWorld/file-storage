@@ -5,7 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
+import type { Version } from '@prisma/client';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads');
 
@@ -62,8 +63,9 @@ export async function POST(
     }
 
     // Get current version to read file content
+    const versions = await store.versions.findMany({ fileId: file.id });
     const currentVersion = file.currentVersionId
-      ? await store.versions.findMany({ fileId: file.id }).then(vs => vs.find(v => v.id === file.currentVersionId))
+      ? versions.find((v: Version) => v.id === file.currentVersionId)
       : null;
 
     if (!currentVersion) {

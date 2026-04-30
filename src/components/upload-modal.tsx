@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Upload, X, FolderPlus, ChevronRight, Search, Home } from 'lucide-react';
 import { getAllFolders, createFolder, Folder } from '@/lib/api';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/client-logger';
 
 interface UploadModalProps {
   onUpload: (file: File, changeLog: string, summary: string, folderPath?: string) => Promise<void>;

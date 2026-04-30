@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
-import { logger } from '@/utils/logger';
+import { logger } from '@/utils/server-logger';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads');
 
