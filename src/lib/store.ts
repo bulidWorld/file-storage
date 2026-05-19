@@ -229,16 +229,18 @@ export const store = {
     },
   },
   folders: {
-    findMany: ({ groupId, userId, parentId, orderBy }: {
+    findMany: async ({ groupId, userId, parentId, workspaceId, orderBy }: {
       groupId?: number;
       userId?: number;
       parentId?: number | null;
+      workspaceId?: number;
       orderBy?: { name?: 'asc' | 'desc'; path?: 'asc' | 'desc' };
     }) => {
       const prismaWhere: any = {};
       if (groupId) prismaWhere.groupId = groupId;
       if (userId) prismaWhere.userId = userId;
       if (parentId !== undefined) prismaWhere.parentId = parentId;
+      if (workspaceId) prismaWhere.workspaceId = workspaceId;
 
       return prisma.folder.findMany({
         where: prismaWhere,
@@ -248,27 +250,30 @@ export const store = {
         } : undefined,
       });
     },
-    findUnique: ({ id, groupId_path }: { id?: number; groupId_path?: { groupId: number; path: string } }) => {
+    findUnique: ({ id, publicId }: { id?: number; publicId?: string }) => {
       if (id) {
         return prisma.folder.findUnique({
           where: { id },
         });
       }
-      if (groupId_path) {
+      if (publicId) {
         return prisma.folder.findUnique({
-          where: {
-            groupId_path: {
-              groupId: groupId_path.groupId,
-              path: groupId_path.path,
-            },
-          },
+          where: { publicId },
         });
       }
       return Promise.resolve(null);
     },
+    findByPathAndWorkspace: async (groupId: number, path: string, workspaceId?: number) => {
+      const where: any = { groupId, path };
+      if (workspaceId) {
+        where.workspaceId = workspaceId;
+      }
+      return prisma.folder.findFirst({ where, orderBy: { id: 'asc' } });
+    },
     create: async (data: {
       userId: number;
       groupId: number;
+      workspaceId: number;
       parentId?: number | null;
       name: string;
       path: string;
@@ -285,6 +290,92 @@ export const store = {
       return prisma.folder.update({
         where: { id },
         data,
+      });
+    },
+    delete: ({ id }: { id: number }) => {
+      return prisma.folder.delete({ where: { id } });
+    },
+  },
+  workspaces: {
+    findMany: () => {
+      return prisma.workspace.findMany({ orderBy: { name: 'asc' } });
+    },
+    findUnique: ({ id, publicId }: { id?: number; publicId?: string }) => {
+      if (id) return prisma.workspace.findUnique({ where: { id } });
+      if (publicId) return prisma.workspace.findUnique({ where: { publicId } });
+      return Promise.resolve(null);
+    },
+    create: async (data: { name: string; color?: string }) => {
+      const publicId = `ws-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      return prisma.workspace.create({
+        data: { ...data, publicId, color: data.color || '#3B82F6' },
+      });
+    },
+    update: ({ id, data }: { id: number; data: { name?: string; color?: string } }) => {
+      return prisma.workspace.update({ where: { id }, data });
+    },
+    delete: (id: number) => {
+      return prisma.workspace.delete({ where: { id } });
+    },
+    findOrCreateDefault: async () => {
+      let ws = await prisma.workspace.findUnique({ where: { publicId: 'workspace-default' } });
+      if (!ws) {
+        ws = await prisma.workspace.create({
+          data: { name: 'DEFAULT', publicId: 'workspace-default', color: '#6B7280' },
+        });
+      }
+      return ws;
+    },
+  },
+  workspaceFolders: {
+    findByWorkspace: (workspaceId: number) => {
+      return prisma.workspaceFolder.findMany({
+        where: { workspaceId },
+        include: { folder: true },
+      });
+    },
+    findByFolder: (folderId: number) => {
+      return prisma.workspaceFolder.findMany({
+        where: { folderId },
+        include: { workspace: true },
+      });
+    },
+    addToWorkspace: (workspaceId: number, folderId: number) => {
+      return prisma.workspaceFolder.upsert({
+        where: { workspaceId_folderId: { workspaceId, folderId } },
+        update: {},
+        create: { workspaceId, folderId },
+      });
+    },
+    removeFromWorkspace: (workspaceId: number, folderId: number) => {
+      return prisma.workspaceFolder.deleteMany({
+        where: { workspaceId, folderId },
+      });
+    },
+  },
+  workspaceFiles: {
+    findByWorkspace: (workspaceId: number) => {
+      return prisma.workspaceFile.findMany({
+        where: { workspaceId },
+        include: { file: true },
+      });
+    },
+    findByFile: (fileId: number) => {
+      return prisma.workspaceFile.findMany({
+        where: { fileId },
+        include: { workspace: true },
+      });
+    },
+    addToWorkspace: (workspaceId: number, fileId: number) => {
+      return prisma.workspaceFile.upsert({
+        where: { workspaceId_fileId: { workspaceId, fileId } },
+        update: {},
+        create: { workspaceId, fileId },
+      });
+    },
+    removeFromWorkspace: (workspaceId: number, fileId: number) => {
+      return prisma.workspaceFile.deleteMany({
+        where: { workspaceId, fileId },
       });
     },
   },

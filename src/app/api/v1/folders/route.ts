@@ -22,12 +22,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const parentPath = searchParams.get('parentPath');
+    const workspaceId = searchParams.get('workspaceId');
 
     let folders;
     if (parentPath && parentPath !== '/') {
-      const parent = await store.folders.findUnique({
-        groupId_path: { groupId: defaultGroup.id, path: parentPath },
-      });
+      const parent = await store.folders.findByPathAndWorkspace(defaultGroup.id, parentPath, workspaceId ? Number(workspaceId) : undefined);
       if (!parent) {
         return NextResponse.json({ data: [] });
       }
@@ -42,6 +41,11 @@ export async function GET(request: NextRequest) {
         parentId: null,
         orderBy: { name: 'asc' },
       });
+    }
+
+    // Filter by workspace if specified
+    if (workspaceId) {
+      folders = folders.filter(f => f.workspaceId === Number(workspaceId));
     }
 
     return NextResponse.json({ data: folders });
@@ -69,29 +73,34 @@ export async function POST(request: NextRequest) {
     const defaultGroup = await store.groups.findOrCreateDefault();
 
     const body = await request.json();
-    const { name, parentPath } = body;
+    const { name, parentPath, workspaceId } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Folder name is required' }, { status: 400 });
     }
 
+    let targetWsId = workspaceId ? Number(workspaceId) : null;
+
     let fullPath = '/' + name;
     let parentId: number | null = null;
 
+    // Resolve workspaceId: user-provided > parent folder's workspace > default
+    const defaultWs = await store.workspaces.findOrCreateDefault();
+    let finalWorkspaceId = defaultWs.id;
+
     if (parentPath && parentPath !== '/') {
-      const parent = await store.folders.findUnique({
-        groupId_path: { groupId: defaultGroup.id, path: parentPath },
-      });
+      const parent = await store.folders.findByPathAndWorkspace(defaultGroup.id, parentPath);
       if (!parent) {
         return NextResponse.json({ error: 'Parent folder not found' }, { status: 404 });
       }
       fullPath = parentPath + '/' + name;
       parentId = parent.id;
+      finalWorkspaceId = targetWsId || parent.workspaceId;
+    } else if (targetWsId) {
+      finalWorkspaceId = targetWsId;
     }
 
-    const existing = await store.folders.findUnique({
-      groupId_path: { groupId: defaultGroup.id, path: fullPath },
-    });
+    const existing = await store.folders.findByPathAndWorkspace(defaultGroup.id, fullPath);
 
     if (existing) {
       return NextResponse.json({ error: 'Folder already exists' }, { status: 409 });
@@ -100,10 +109,17 @@ export async function POST(request: NextRequest) {
     const folder = await store.folders.create({
       userId: dbUser.id,
       groupId: defaultGroup.id,
+      workspaceId: finalWorkspaceId,
       name,
       path: fullPath,
       parentId,
     });
+
+    // Associate folder with workspace
+    const ws = await store.workspaces.findUnique({ id: finalWorkspaceId });
+    if (ws) {
+      await store.workspaceFolders.addToWorkspace(ws.id, folder.id);
+    }
 
     return NextResponse.json({ data: folder });
   } catch (error) {

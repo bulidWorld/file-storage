@@ -21,92 +21,77 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unsupported document format' }, { status: 400 })
     }
 
+    // Map internal docType to OnlyOffice documentType (required by API)
+    const documentType = docType === 'word' ? 'word' : docType === 'cell' ? 'cell' : 'slide'
+
     const ext = fileName.split('.').pop() || ''
     const downloadToken = generateDownloadToken(publicId)
     const documentUrl = `${config.SERVER_OUTER_URL}/onlyoffice/download/${publicId}?token=${downloadToken}`
     const callbackUrl = `${config.CALLBACK_URL || config.SERVER_OUTER_URL}/api/v1/onlyoffice/callback`
-
     const documentKey = `${publicId}_${Date.now()}`
 
-    const token = generateToken({
-      document: {
-        fileType: ext,
-        key: documentKey,
-        title: fileName,
-        url: documentUrl,
-        permissions: {
-          comment: true,
-          copy: true,
-          download: true,
-          edit: true,
-          fillForms: true,
-          modifyContentControl: true,
-          modifyFilter: true,
-          print: true,
-          review: true,
-        },
+    // Build document and editorConfig first, then sign the complete objects
+    const document = {
+      fileType: ext,
+      key: documentKey,
+      title: fileName,
+      url: documentUrl,
+      permissions: {
+        comment: true,
+        copy: true,
+        download: true,
+        edit: true,
+        fillForms: true,
+        modifyContentControl: true,
+        modifyFilter: true,
+        print: true,
+        review: true,
       },
-      editorConfig: {
-        mode: 'edit',
-        lang: 'zh-CN',
-        location: 'CN',
-        callbackUrl,
-        user: {
-          id: user?.id || 'user-' + Date.now(),
-          name: user?.name || 'Anonymous',
-        },
-        actionLink: null,
-      },
-    })
+    }
 
-    const onlyOfficeConfig = {
-      document: {
-        fileType: ext,
-        key: documentKey,
-        title: fileName,
-        url: documentUrl,
-        permissions: {
-          comment: true,
-          copy: true,
-          download: true,
-          edit: true,
-          fillForms: true,
-          modifyContentControl: true,
-          modifyFilter: true,
-          print: true,
-          review: true,
-        },
+    const editorConfig = {
+      mode: 'edit' as const,
+      lang: 'zh-CN',
+      location: 'CN',
+      callbackUrl,
+      user: {
+        id: user?.id || 'user-' + Date.now(),
+        name: user?.name || 'Anonymous',
       },
-      editorConfig: {
-        mode: 'edit',
-        lang: 'zh-CN',
-        location: 'CN',
-        callbackUrl,
-        user: {
-          id: user?.id || 'user-' + Date.now(),
-          name: user?.name || 'Anonymous',
-        },
-        customization: {
-          autosave: true,
-          chat: true,
-          comments: true,
-          feedback: false,
-          forcesave: true,
-          reviewDisplay: 'original',
+      customization: {
+        autosave: true,
+        chat: true,
+        comments: true,
+        feedback: false,
+        forcesave: true,
+        review: {
+          hideReviewDisplay: false,
+          hoverMode: false,
+          reviewDisplay: 'markup' as const,
           showReviewChanges: true,
-          spellcheck: true,
-          toolbarHideFileName: false,
-          toolbarNoTabs: false,
-          unit: 'cm',
-          zoom: 100,
         },
+        spellcheck: true,
+        toolbarHideFileName: false,
+        toolbarNoTabs: false,
+        unit: 'cm',
+        zoom: 100,
       },
+    }
+
+    const type = 'desktop'
+
+    // Token must wrap the EXACT same config objects sent to DocsAPI
+    const token = generateToken({ document, documentType, editorConfig })
+
+    return NextResponse.json({
+      type,
+      document,
+      documentType,
+      editorConfig,
       height: '100%',
       width: '100%',
       token,
-    }
-
-    return NextResponse.json(onlyOfficeConfig)
+    })
   } catch (error) {
     logger.error('OnlyOffice config error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

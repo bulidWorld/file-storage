@@ -8,39 +8,38 @@ datasource db {
 }
 
 model User {
-  id         Int       @id @default(autoincrement())
-  publicId   String    @unique
-  username   String    @unique
-  email      String
-  name       String
-  dn         String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  files      File[]
-  folders    Folder[]
-  versions   Version[]
-  deletedFiles File[]  @relation("DeletedFiles")
-  memberships GroupMember[]
+  id           Int           @id @default(autoincrement())
+  publicId     String        @unique
+  username     String        @unique
+  email        String
+  name         String
+  dn           String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedFiles File[]        @relation("DeletedFiles")
+  files        File[]
+  folders      Folder[]
+  memberships  GroupMember[]
+  versions     Version[]
 }
 
 model Group {
-  id         Int       @id @default(autoincrement())
-  publicId   String    @unique
-  name       String    @unique
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  members    GroupMember[]
-  folders    Folder[]
-  files      File[]
+  id        Int           @id @default(autoincrement())
+  publicId  String        @unique
+  name      String        @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  files     File[]
+  folders   Folder[]
+  members   GroupMember[]
 }
 
 model GroupMember {
   id        Int      @id @default(autoincrement())
   groupId   Int
   userId    Int
-  role      String   @default("member")  // "admin" | "member"
+  role      String   @default("member")
   createdAt DateTime @default(now())
-
   group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -48,45 +47,83 @@ model GroupMember {
 }
 
 model Folder {
-  id         Int       @id @default(autoincrement())
-  publicId   String    @unique
-  userId     Int
-  groupId    Int
-  parentId   Int?
-  name       String
-  path       String
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  user       User      @relation(fields: [userId], references: [id])
-  group      Group     @relation(fields: [groupId], references: [id])
-  parent     Folder?   @relation("FolderHierarchy", fields: [parentId], references: [id])
-  children   Folder[]  @relation("FolderHierarchy")
-  files      File[]
+  id               Int               @id @default(autoincrement())
+  publicId         String            @unique
+  userId           Int
+  parentId         Int?
+  name             String
+  path             String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  groupId          Int
+  workspaceId      Int
+  files            File[]
+  group            Group             @relation(fields: [groupId], references: [id])
+  parent           Folder?           @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children         Folder[]          @relation("FolderHierarchy")
+  user             User              @relation(fields: [userId], references: [id])
+  workspaceFolders WorkspaceFolder[]
 
-  @@unique([groupId, path])
+  @@index([groupId, workspaceId, path])
 }
 
 model File {
-  id               Int       @id @default(autoincrement())
-  publicId         String    @unique
+  id               Int             @id @default(autoincrement())
+  publicId         String          @unique
   userId           Int
-  groupId          Int
   folderId         Int?
   name             String
   mimeType         String?
   path             String
-  summary          String?
-  currentVersionId Int?      @unique
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  currentVersionId Int?            @unique
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   deletedAt        DateTime?
   deletedBy        Int?
-  user             User      @relation(fields: [userId], references: [id])
-  group            Group     @relation(fields: [groupId], references: [id])
-  folder           Folder?   @relation(fields: [folderId], references: [id])
-  versions         Version[] @relation("FileVersions")
-  currentVersion   Version?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
-  creator          User?     @relation("DeletedFiles", fields: [deletedBy], references: [id])
+  groupId          Int
+  summary          String?
+  currentVersion   Version?        @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
+  creator          User?           @relation("DeletedFiles", fields: [deletedBy], references: [id])
+  folder           Folder?         @relation(fields: [folderId], references: [id])
+  group            Group           @relation(fields: [groupId], references: [id])
+  user             User            @relation(fields: [userId], references: [id])
+  versions         Version[]       @relation("FileVersions")
+  workspaceFiles   WorkspaceFile[]
+}
+
+model Workspace {
+  id          Int               @id @default(autoincrement())
+  publicId    String            @unique
+  name        String
+  color       String            @default("#3B82F6")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  fileItems   WorkspaceFile[]
+  folderItems WorkspaceFolder[]
+}
+
+model WorkspaceFolder {
+  id          Int       @id @default(autoincrement())
+  workspaceId Int
+  folderId    Int
+  addedAt     DateTime  @default(now())
+  folder      Folder    @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, folderId])
+  @@index([folderId])
+}
+
+model WorkspaceFile {
+  id          Int       @id @default(autoincrement())
+  workspaceId Int
+  fileId      Int
+  addedAt     DateTime  @default(now())
+  file        File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, fileId])
+  @@index([fileId])
 }
 
 model Version {
@@ -103,9 +140,9 @@ model Version {
   isCurrent     Boolean  @default(false)
   createdAt     DateTime @default(now())
   createdBy     Int
-  file          File     @relation("FileVersions", fields: [fileId], references: [id])
   currentFile   File?    @relation("FileCurrentVersion")
   user          User     @relation(fields: [createdBy], references: [id])
+  file          File     @relation("FileVersions", fields: [fileId], references: [id])
 
   @@index([fileId])
 }

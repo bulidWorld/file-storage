@@ -21,9 +21,11 @@ declare global {
 export function OnlyOfficeEditor({ publicId, fileName, onClose }: OnlyOfficeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<{ destroyEditor: () => void } | null>(null)
+  const loadingRef = useRef(false) // prevent Strict Mode double init
 
   const loadEditor = useCallback(async () => {
-    if (!containerRef.current) return
+    if (!containerRef.current || loadingRef.current) return
+    loadingRef.current = true
 
     const userName = localStorage.getItem('office-face-username') || '匿名用户'
     let userId = localStorage.getItem('office-face-userid')
@@ -56,13 +58,12 @@ export function OnlyOfficeEditor({ publicId, fileName, onClose }: OnlyOfficeEdit
       if (editorRef.current) {
         editorRef.current.destroyEditor()
       }
-
+      console.log("editor config v2")
+      console.log({...config,token})
+      // Spread the full config so all API-required fields (documentType, etc.) reach DocsAPI
       editorRef.current = new window.DocsAPI.DocEditor('onlyoffice-editor', {
-        width: '100%',
-        height: '100%',
+        ...config,
         token,
-        document: config.document,
-        editorConfig: config.editorConfig,
         events: {
           onAppReady: () => console.log('Editor ready'),
           onDocumentStateChange: (event: unknown) => console.log('Document state changed:', event),
@@ -79,6 +80,7 @@ export function OnlyOfficeEditor({ publicId, fileName, onClose }: OnlyOfficeEdit
   useEffect(() => {
     loadEditor()
     return () => {
+      loadingRef.current = false
       if (editorRef.current) {
         editorRef.current.destroyEditor()
         editorRef.current = null

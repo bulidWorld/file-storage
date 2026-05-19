@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { store, sanitize } from '@/lib/store';
+import { store, sanitize, prisma } from '@/lib/store';
 import { v4 as uuidv4 } from 'uuid';
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -38,12 +38,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const folderPath = searchParams.get('folderPath');
+    const workspaceId = searchParams.get('workspaceId');
 
     let folderId: number | null = null;
     if (folderPath && folderPath !== '/') {
-      const folder = await store.folders.findUnique({
-        groupId_path: { groupId: defaultGroup.id, path: folderPath },
-      });
+      const folder = await store.folders.findByPathAndWorkspace(defaultGroup.id, folderPath);
       if (folder) {
         folderId = folder.id;
       } else {
@@ -59,7 +58,28 @@ export async function GET(request: NextRequest) {
       orderBy: { updatedAt: 'desc' },
     });
 
-    return NextResponse.json({ data: sanitize(files) });
+    // Filter files by workspace membership
+    let result = files;
+    if (workspaceId) {
+      const wsId = Number(workspaceId);
+      // Get files directly in this workspace (root level files)
+      const wsFiles = await store.workspaceFiles.findByWorkspace(wsId);
+      const fileIdSet = new Set(wsFiles.map((wf: { fileId: number }) => wf.fileId));
+
+      // Get folder IDs in this workspace by their workspaceId column
+      const wsFolders = await prisma.folder.findMany({
+        where: { workspaceId: wsId },
+        select: { id: true },
+      });
+      const folderIdSet = new Set(wsFolders.map((f: { id: number }) => f.id));
+
+      // Files visible if: directly in workspace, or their folder is in workspace
+      result = files.filter((f: { id: number; folderId: number | null }) =>
+        fileIdSet.has(f.id) || (f.folderId != null && folderIdSet.has(f.folderId))
+      );
+    }
+
+    return NextResponse.json({ data: sanitize(result) });
   } catch (error) {
     logger.error('Get files error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -81,6 +101,7 @@ export async function POST(request: NextRequest) {
     const changeLog = formData.get('changeLog') as string | undefined;
     const summary = formData.get('summary') as string | undefined;
     const folderPath = formData.get('folderPath') as string | undefined;
+    const workspaceId = formData.get('workspaceId') as string | undefined;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -93,11 +114,11 @@ export async function POST(request: NextRequest) {
 
     const defaultGroup = await store.groups.findOrCreateDefault();
 
+    let targetWsId = workspaceId ? Number(workspaceId) : null;
+
     let folderId: number | null = null;
     if (folderPath && folderPath !== '/') {
-      const folder = await store.folders.findUnique({
-        groupId_path: { groupId: defaultGroup.id, path: folderPath },
-      });
+      const folder = await store.folders.findByPathAndWorkspace(defaultGroup.id, folderPath);
       if (folder) folderId = folder.id;
     }
 
@@ -133,6 +154,18 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    // Associate file with workspace
+    if (targetWsId) {
+      const ws = await store.workspaces.findUnique({ id: targetWsId });
+      if (ws) {
+        await store.workspaceFiles.addToWorkspace(ws.id, newFile.id);
+      }
+    } else {
+      // Default to DEFAULT workspace
+      const defaultWs = await store.workspaces.findOrCreateDefault();
+      await store.workspaceFiles.addToWorkspace(defaultWs.id, newFile.id);
+    }
 
     return NextResponse.json({ data: sanitize(newFile) });
   } catch (error) {

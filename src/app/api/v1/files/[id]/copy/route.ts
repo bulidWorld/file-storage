@@ -53,9 +53,7 @@ export async function POST(
 
     let targetFolderId: number | null = null;
     if (targetFolderPath !== '/') {
-      const targetFolder = await store.folders.findUnique({
-        groupId_path: { groupId: defaultGroup.id, path: targetFolderPath },
-      });
+      const targetFolder = await store.folders.findByPathAndWorkspace(defaultGroup.id, targetFolderPath, undefined);
       if (!targetFolder) {
         return NextResponse.json({ error: 'Target folder not found' }, { status: 404 });
       }

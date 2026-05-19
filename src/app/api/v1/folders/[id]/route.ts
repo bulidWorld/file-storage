@@ -51,7 +51,7 @@ export async function DELETE(
       for (const file of folderFiles) {
         await prisma.file.update({
           where: { id: file.id },
-          data: { deletedAt: now, deletedBy: user.id },
+          data: { deletedAt: now, deletedBy: user.sub },
         });
       }
       await prisma.folder.delete({ where: { id: f.id } });
@@ -133,9 +133,7 @@ export async function PATCH(
     if (targetParentPath !== undefined) {
       let targetParentId: number | null = null;
       if (targetParentPath && targetParentPath !== '/') {
-        const targetParent = await store.folders.findUnique({
-          groupId_path: { groupId: defaultGroup.id, path: targetParentPath },
-        });
+        const targetParent = await store.folders.findByPathAndWorkspace(defaultGroup.id, targetParentPath);
         if (!targetParent) {
           return NextResponse.json({ error: 'Target parent folder not found' }, { status: 404 });
         }

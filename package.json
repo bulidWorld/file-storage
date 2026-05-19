@@ -12,6 +12,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@naze/ldap-client": "^1.0.0",
     "@prisma/client": "^5.22.0",
     "axios": "^1.15.2",
     "clsx": "^2.1.1",

@@ -20,10 +20,22 @@ export async function GET(request: NextRequest) {
 
     const defaultGroup = await store.groups.findOrCreateDefault();
 
-    const folders = await store.folders.findMany({
-      groupId: defaultGroup.id,
-      orderBy: { path: 'asc' },
-    });
+    const { searchParams } = new URL(request.url);
+    const workspaceId = searchParams.get('workspaceId');
+
+    let folders;
+    if (workspaceId) {
+      folders = await store.folders.findMany({
+        groupId: defaultGroup.id,
+        workspaceId: Number(workspaceId),
+        orderBy: { path: 'asc' },
+      });
+    } else {
+      folders = await store.folders.findMany({
+        groupId: defaultGroup.id,
+        orderBy: { path: 'asc' },
+      });
+    }
 
     return NextResponse.json({ data: folders });
   } catch (error) {

@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileRecord, getFiles, uploadFile, updateFile, deleteFile, downloadFile, rollback, Version, getFilesByFolder, Folder, renameFile, moveFile, copyFile, renameFolder, moveFolder, createFolder, deleteFolder } from '@/lib/api';
+import { FileRecord, getFiles, uploadFile, updateFile, deleteFile, downloadFile, rollback, Version, getFilesByFolder, Folder, Workspace, renameFile, moveFile, copyFile, renameFolder, moveFolder, createFolder, deleteFolder, getWorkspaces, createWorkspace, addFolderToWorkspace, removeFolderFromWorkspace, addFileToWorkspace, removeFileFromWorkspace, getItemWorkspaces } from '@/lib/api';
 import { FileList } from '@/components/file-list';
 import { FileDetailModal } from '@/components/file-detail-modal';
 import { UploadModal } from '@/components/upload-modal';
 import { ContextMenu } from '@/components/context-menu';
 import { FolderPickerModal } from '@/components/folder-picker-modal';
 import { OnlyOfficeEditor } from '@/components/onlyoffice-editor';
+import { WorkspaceManagerModal } from '@/components/workspace-manager-modal';
+import { WorkspaceAssignModal } from '@/components/workspace-assign-modal';
 import { getDocType } from '@/lib/onlyoffice';
 import { logger } from '@/utils/client-logger';
 
@@ -41,6 +43,9 @@ import {
   Archive,
   Code,
   File,
+  Building2,
+  Plus,
+  Check,
 } from 'lucide-react';
 
 type ViewMode = 'grid' | 'list';
@@ -54,8 +59,7 @@ interface BreadcrumbItem {
 
 export default function Home() {
   const router = useRouter();
-  const initialFolder = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('folder') : null;
-  const initialEditId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('edit') : null;
+  const [initialEditId, setInitialEditId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<FileRecord | null>(null);
@@ -64,10 +68,24 @@ export default function Home() {
   const [currentFilter, setCurrentFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [user, setUser] = useState<{ username: string; name: string; email: string } | null>(null);
-  const [currentFolderPath, setCurrentFolderPath] = useState<string | null>(initialFolder);
+  const [currentFolderPath, setCurrentFolderPath] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
   const [folders, setFolders] = useState<Folder[]>([]);
   const [onlyofficeFile, setOnlyofficeFile] = useState<{ publicId: string; fileName: string } | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string>('all'); // 'all' or publicId
+  const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
+  const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
+  const [showWorkspaceAssign, setShowWorkspaceAssign] = useState<{ type: 'file' | 'folder'; publicId: string } | null>(null);
+
+  // Read URL params after mount to avoid hydration mismatch
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const folder = params.get('folder');
+    const edit = params.get('edit');
+    setInitialEditId(edit);
+    if (folder) setCurrentFolderPath(folder);
+  }, []);
 
   // Navigation: sync state with browser URL
   const navigateToFolder = useCallback((path: string | null) => {
@@ -153,9 +171,10 @@ export default function Home() {
   const loadFiles = useCallback(async () => {
     try {
       setLoading(true);
+      const ws = selectedWorkspace !== 'all' ? workspaces.find((w: Workspace) => w.publicId === selectedWorkspace) : undefined;
       const data = currentFolderPath
-        ? await getFilesByFolder(currentFolderPath)
-        : await getFiles();
+        ? await getFilesByFolder(currentFolderPath, ws?.id)
+        : await getFiles(ws?.id);
       setFiles(data);
       if (!onlyofficeFile && initialEditId) {
         const targetFile = data.find(f => f.publicId === initialEditId);
@@ -166,7 +185,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [currentFolderPath, onlyofficeFile, initialEditId]);
+  }, [currentFolderPath, onlyofficeFile, initialEditId, selectedWorkspace, workspaces]);
 
   // Check authentication on mount
   useEffect(() => {
@@ -179,25 +198,42 @@ export default function Home() {
 
   // Load folders on mount
   useEffect(() => {
-    loadFolders();
+    loadWorkspaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const data = await getWorkspaces();
+      setWorkspaces(data);
+    } catch (error) {
+      logger.error('Failed to load workspaces:', error);
+    }
   }, []);
 
   const loadFolders = useCallback(async () => {
     try {
       const { getAllFolders } = await import('@/lib/api');
-      const data = await getAllFolders();
+      const ws = selectedWorkspace !== 'all' ? workspaces.find((w: Workspace) => w.publicId === selectedWorkspace) : undefined;
+      const data = await getAllFolders(ws?.id);
       setFolders(data);
     } catch (error) {
       logger.error('Failed to load folders:', error);
     }
-  }, []);
+  }, [selectedWorkspace, workspaces]);
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_info');
     router.push('/login');
   };
+
+  // Reload files when workspace changes
+  useEffect(() => {
+    loadFiles();
+    loadFolders();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspace]);
 
   // Reload files only when folder path changes
   useEffect(() => {
@@ -208,6 +244,19 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem('file-favorites', JSON.stringify([...favorites]));
   }, [favorites]);
+
+  // Close workspace dropdown on outside click
+  useEffect(() => {
+    if (!showWorkspaceDropdown) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-workspace-selector]')) {
+        setShowWorkspaceDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showWorkspaceDropdown]);
 
   const toggleFavorite = useCallback((fileId: string) => {
     setFavorites(prev => {
@@ -222,7 +271,8 @@ export default function Home() {
   }, []);
 
   const handleUpload = async (file: globalThis.File, changeLog: string, summary: string, folderPath?: string) => {
-    await uploadFile(file, changeLog, folderPath, summary);
+    const ws = selectedWorkspace !== 'all' ? workspaces.find((w: Workspace) => w.publicId === selectedWorkspace) : undefined;
+    await uploadFile(file, changeLog, folderPath, summary, ws?.id);
     setShowUploadForm(false);
     await loadFiles();
     await loadFolders();
@@ -559,6 +609,7 @@ export default function Home() {
             <span className="text-sm font-medium">上传</span>
           </button>
         </div>
+
         {user && (
           <div className="flex items-center gap-3 ml-auto pl-3 border-l border-gray-300">
             <div className="flex items-center gap-2">
@@ -566,8 +617,10 @@ export default function Home() {
                 <UserIcon className="w-4 h-4 text-white" />
               </div>
               <div className="text-sm hidden sm:block">
-                <p className="font-medium text-gray-700">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.username}</p>
+                <p className="font-medium text-gray-700">{user.username}</p>
+                {user.name && user.name !== user.username && (
+                  <p className="text-xs text-gray-500">{user.name}</p>
+                )}
               </div>
             </div>
             <button
@@ -583,6 +636,58 @@ export default function Home() {
 
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-300 px-4 py-2 flex items-center gap-4">
+        {/* Workspace Selector */}
+        <div className="relative shrink-0" data-workspace-selector>
+          <button
+            onClick={() => setShowWorkspaceDropdown(!showWorkspaceDropdown)}
+            className="flex items-center gap-2 px-3 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50 transition-colors text-sm"
+          >
+            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: selectedWorkspace === 'all' ? '#6B7280' : (workspaces.find((w: Workspace) => w.publicId === selectedWorkspace)?.color || '#6B7280') }} />
+            <span className="text-gray-700">{selectedWorkspace === 'all' ? '全部工作空间' : (workspaces.find((w: Workspace) => w.publicId === selectedWorkspace)?.name || '全部工作空间')}</span>
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          </button>
+          {showWorkspaceDropdown && (
+            <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-300 rounded-lg shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
+              <button
+                onClick={() => {
+                  setSelectedWorkspace('all');
+                  setShowWorkspaceDropdown(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <div className="w-2.5 h-2.5 rounded-full bg-gray-400 flex-shrink-0" />
+                <span className="text-gray-700 flex-1 text-left">全部工作空间</span>
+                {selectedWorkspace === 'all' && <Check className="w-4 h-4 text-blue-500" />}
+              </button>
+              {workspaces.map((ws: Workspace) => (
+                <button
+                  key={ws.id}
+                  onClick={() => {
+                    setSelectedWorkspace(ws.publicId);
+                    setShowWorkspaceDropdown(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-100"
+                >
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ws.color }} />
+                  <span className="text-gray-700 flex-1 text-left truncate">{ws.name}</span>
+                  {selectedWorkspace === ws.publicId && <Check className="w-4 h-4 text-blue-500" />}
+                </button>
+              ))}
+              <div className="border-t border-gray-200 my-1" />
+              <button
+                onClick={() => {
+                  setShowWorkspaceModal(true);
+                  setShowWorkspaceDropdown(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <Plus className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="text-gray-500">管理工作空间</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-1 text-sm">
           {breadcrumbs.map((crumb, index) => (
             <div key={crumb.filter + (crumb.folderPath || '')} className="flex items-center">
@@ -800,6 +905,9 @@ export default function Home() {
           onUpload={handleUpload}
           onClose={() => setShowUploadForm(false)}
           currentFolderPath={currentFolderPath}
+          folders={folders}
+          workspaceId={selectedWorkspace !== 'all' ? workspaces.find((w: Workspace) => w.publicId === selectedWorkspace)?.id : undefined}
+          onFoldersRefresh={() => { loadFolders(); loadFiles(); }}
         />
       )}
 
@@ -844,7 +952,7 @@ export default function Home() {
           onMove={() => setShowFolderPicker({ type: 'move', item: contextMenu.item })}
           onCopy={() => setShowFolderPicker({ type: 'copy', item: contextMenu.item })}
           onEdit={contextMenu.item.type === 'file' && getDocType(contextMenu.item.name) ? () => {
-            openOnlyOffice(contextMenu.item.id, contextMenu.item.name);
+            openOnlyOffice(String(contextMenu.item.id), contextMenu.item.name);
           } : undefined}
         />
       )}
@@ -883,6 +991,25 @@ export default function Home() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Workspace Manager Modal */}
+      {showWorkspaceModal && (
+        <WorkspaceManagerModal
+          workspaces={workspaces}
+          onClose={() => setShowWorkspaceModal(false)}
+          onChange={loadWorkspaces}
+        />
+      )}
+
+      {/* Workspace Assign Modal */}
+      {showWorkspaceAssign && (
+        <WorkspaceAssignModal
+          type={showWorkspaceAssign.type}
+          publicId={showWorkspaceAssign.publicId}
+          onClose={() => setShowWorkspaceAssign(null)}
+          onChange={loadWorkspaces}
+        />
       )}
 
       {/* Folder Picker Modal (Move/Copy) */}

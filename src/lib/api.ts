@@ -46,8 +46,11 @@ export interface Version {
   isCurrent: boolean;
 }
 
-export async function getFiles(): Promise<FileRecord[]> {
-  const res = await fetch(`${API_URL}/api/v1/files`, {
+export async function getFiles(workspaceId?: number): Promise<FileRecord[]> {
+  const params = new URLSearchParams();
+  if (workspaceId) params.set('workspaceId', String(workspaceId));
+  const url = `${API_URL}/api/v1/files${params.toString() ? `?${params}` : ''}`;
+  const res = await fetch(url, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) {
@@ -71,12 +74,13 @@ export async function getFile(id: string): Promise<FileRecord> {
   return data.data;
 }
 
-export async function uploadFile(file: globalThis.File, changeLog?: string, folderPath?: string, summary?: string): Promise<FileRecord> {
+export async function uploadFile(file: globalThis.File, changeLog?: string, folderPath?: string, summary?: string, workspaceId?: number): Promise<FileRecord> {
   const formData = new FormData();
   formData.append('file', file);
   if (changeLog) formData.append('changeLog', changeLog);
   if (folderPath) formData.append('folderPath', folderPath);
   if (summary) formData.append('summary', summary);
+  if (workspaceId) formData.append('workspaceId', String(workspaceId));
 
   const token = localStorage.getItem('auth_token');
   const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -160,11 +164,17 @@ export interface Folder {
   updatedAt: string;
 }
 
+export interface Workspace {
+  id: number;
+  publicId: string;
+  name: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export async function getFolders(parentPath?: string): Promise<Folder[]> {
-  const url = parentPath
-    ? `${API_URL}/api/v1/folders?parentPath=${encodeURIComponent(parentPath)}`
-    : `${API_URL}/api/v1/folders`;
-  const res = await fetch(url, {
+  const res = await fetch(`${API_URL}/api/v1/folders?${parentPath ? `parentPath=${encodeURIComponent(parentPath)}` : ''}`, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error('Failed to fetch folders');
@@ -172,8 +182,11 @@ export async function getFolders(parentPath?: string): Promise<Folder[]> {
   return data.data;
 }
 
-export async function getAllFolders(): Promise<Folder[]> {
-  const res = await fetch(`${API_URL}/api/v1/folders/all`, {
+export async function getAllFolders(workspaceId?: number): Promise<Folder[]> {
+  const params = new URLSearchParams();
+  if (workspaceId) params.set('workspaceId', String(workspaceId));
+  const url = `${API_URL}/api/v1/folders/all${params.toString() ? `?${params}` : ''}`;
+  const res = await fetch(url, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error('Failed to fetch all folders');
@@ -181,24 +194,25 @@ export async function getAllFolders(): Promise<Folder[]> {
   return data.data;
 }
 
-export async function createFolder(name: string, parentPath?: string): Promise<Folder> {
+export async function createFolder(name: string, parentPath?: string, workspaceId?: number): Promise<Folder> {
   const res = await fetch(`${API_URL}/api/v1/folders`, {
     method: 'POST',
     headers: {
       ...getAuthHeaders(),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ name, parentPath }),
+    body: JSON.stringify({ name, parentPath, workspaceId: workspaceId || undefined }),
   });
   if (!res.ok) throw new Error('Failed to create folder');
   const data = await res.json();
   return data.data;
 }
 
-export async function getFilesByFolder(folderPath?: string): Promise<FileRecord[]> {
-  const url = folderPath
-    ? `${API_URL}/api/v1/files?folderPath=${encodeURIComponent(folderPath)}`
-    : `${API_URL}/api/v1/files`;
+export async function getFilesByFolder(folderPath?: string, workspaceId?: number): Promise<FileRecord[]> {
+  const params = new URLSearchParams();
+  if (folderPath) params.set('folderPath', folderPath);
+  if (workspaceId) params.set('workspaceId', String(workspaceId));
+  const url = `${API_URL}/api/v1/files?${params}`;
   const res = await fetch(url, {
     headers: getAuthHeaders(),
   });
@@ -266,6 +280,91 @@ export async function moveFolder(id: number, targetParentPath: string): Promise<
     body: JSON.stringify({ targetParentPath }),
   });
   if (!res.ok) throw new Error('Failed to move folder');
+  const data = await res.json();
+  return data.data;
+}
+
+// === Workspace API ===
+
+export async function getWorkspaces(): Promise<Workspace[]> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch workspaces');
+  const data = await res.json();
+  return data.data;
+}
+
+export async function createWorkspace(name: string, color?: string): Promise<Workspace> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ name, color }),
+  });
+  if (!res.ok) throw new Error('Failed to create workspace');
+  const data = await res.json();
+  return data.data;
+}
+
+export async function updateWorkspace(id: number, data: { name?: string; color?: string }): Promise<Workspace> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces/${id}`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update workspace');
+  const data2 = await res.json();
+  return data2.data;
+}
+
+export async function deleteWorkspace(id: number): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to delete workspace');
+}
+
+export async function addFolderToWorkspace(workspaceId: number, folderId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces/${workspaceId}/folders`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ folderId }),
+  });
+  if (!res.ok) throw new Error('Failed to add folder to workspace');
+}
+
+export async function removeFolderFromWorkspace(workspaceId: number, folderId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces/${workspaceId}/folders?folderId=${folderId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to remove folder from workspace');
+}
+
+export async function addFileToWorkspace(workspaceId: number, filePublicId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces/${workspaceId}/files`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ filePublicId }),
+  });
+  if (!res.ok) throw new Error('Failed to add file to workspace');
+}
+
+export async function removeFileFromWorkspace(workspaceId: number, filePublicId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/workspaces/${workspaceId}/files?filePublicId=${filePublicId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to remove file from workspace');
+}
+
+export async function getItemWorkspaces(itemId: string, type: 'folder' | 'file'): Promise<Workspace[]> {
+  const res = await fetch(
+    `${API_URL}/api/v1/workspaces/items/${itemId}?type=${type}`,
+    { headers: getAuthHeaders() }
+  );
+  if (!res.ok) throw new Error('Failed to fetch item workspaces');
   const data = await res.json();
   return data.data;
 }

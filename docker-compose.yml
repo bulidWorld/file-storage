@@ -6,12 +6,9 @@ services:
     env_file:
       - .env
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - PORT=10530
     volumes:
-      - .:/app
-      - node_modules:/app/node_modules
-      - .next:/app/.next
       - /var/lib/app-file-storage:/var/lib/app-file-storage
       - /var/log/app-file-storage:/var/log/app-file-storage
     ports:

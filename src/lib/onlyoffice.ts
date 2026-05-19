@@ -42,6 +42,8 @@ export function generateToken(payload: object): string {
     iat: now,
     exp: now + 3600,
   }
+
+  console.log('[DEBUG] token editorConfig =', JSON.stringify((payload as any).editorConfig, null, 2))
   console.log('[onlyoffice] generateToken: payload keys=', Object.keys(payload))
   const token = jwt.sign(tokenPayload, config.JWT_SECRET, { algorithm: 'HS256' })
   console.log('[onlyoffice] generateToken: token length=', token.length)

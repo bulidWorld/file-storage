@@ -9,6 +9,9 @@ interface UploadModalProps {
   onUpload: (file: File, changeLog: string, summary: string, folderPath?: string) => Promise<void>;
   onClose: () => void;
   currentFolderPath?: string | null;
+  folders?: Folder[];
+  workspaceId?: number | null;
+  onFoldersRefresh?: () => void;
 }
 
 interface FolderTreeNode extends Folder {
@@ -39,7 +42,7 @@ function buildFolderTree(folders: Folder[]): FolderTreeNode[] {
   return roots;
 }
 
-export function UploadModal({ onUpload, onClose, currentFolderPath }: UploadModalProps) {
+export function UploadModal({ onUpload, onClose, currentFolderPath, folders: externalFolders, workspaceId, onFoldersRefresh }: UploadModalProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [changeLog, setChangeLog] = useState('');
@@ -57,7 +60,7 @@ export function UploadModal({ onUpload, onClose, currentFolderPath }: UploadModa
   const [showFolderSelectForNewFolder, setShowFolderSelectForNewFolder] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const folderTree = buildFolderTree(folders);
+  const folderTree = buildFolderTree(externalFolders && externalFolders.length > 0 ? externalFolders : folders);
 
   // Load folders when opening folder selector
   useEffect(() => {
@@ -67,6 +70,8 @@ export function UploadModal({ onUpload, onClose, currentFolderPath }: UploadModa
   }, [showFolderSelect, showNewFolder]);
 
   const loadFolders = async () => {
+    // If external folders are provided, no need to fetch
+    if (externalFolders) return;
     try {
       const allFolders = await getAllFolders();
       logger.debug('[UploadModal] Loaded folders:', allFolders);
@@ -226,11 +231,15 @@ export function UploadModal({ onUpload, onClose, currentFolderPath }: UploadModa
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     try {
-      await createFolder(newFolderName.trim(), newFolderParentPath);
+      await createFolder(newFolderName.trim(), newFolderParentPath, workspaceId || undefined);
       setNewFolderName('');
       setShowNewFolder(false);
       setNewFolderParentPath(undefined);
-      await loadFolders();
+      if (onFoldersRefresh) {
+        await onFoldersRefresh();
+      } else {
+        await loadFolders();
+      }
     } catch (error) {
       logger.error('Failed to create folder:', error);
       alert('创建文件夹失败');
